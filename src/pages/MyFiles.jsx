@@ -7,6 +7,24 @@ import { Button } from "@/components/ui/button";
 import axios from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle } from "@/components/ui/dialog"; // Assuming these components exist
+import { getAllNFTs } from '../contract/methods';
+import { useQuery } from 'react-query';
+import { fetchJsonFromIPFS } from "@/utils/fetchJsonFromIpfs";
+import React, { useEffect } from 'react';
+
+function extractIpfsHash(ipfsString) {
+  // Check if the input is a valid string and starts with "ipfs:/"
+  if (typeof ipfsString !== 'string' || !ipfsString.startsWith('ipfs:/')) {
+      throw new Error('Invalid IPFS URI format');
+  }
+
+  // Extract the hash by removing the "ipfs:/" prefix
+  const ipfsHash = ipfsString.replace('ipfs:/', '');
+  
+  // Return the IPFS hash
+  return ipfsHash;
+}
+
 
 function MyFiles() {
   const [activeTab, setActiveTab] = useState("tab1");
@@ -29,6 +47,7 @@ function MyFiles() {
   const handlePopup = () => {
     setPopup(!popup);
   };
+
   const handleTabChange =(tabName)=>{
     setActiveTab(tabName);
 }
@@ -38,7 +57,7 @@ const handleFileChange = async (event) => {
   const file = event.target.files[0];
   console.log("Selected file:", file);
 
-  setSelectedFile(file); // Store the selected file
+    setSelectedFile(file);
 
   if (file) {
     const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/pdf"];
@@ -53,8 +72,8 @@ const handleFileChange = async (event) => {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('image', file);
+        const formData = new FormData();
+        formData.append('image', file);
 
     try {
       console.log("Uploading file for validation...");
@@ -104,91 +123,67 @@ const handleFileChange = async (event) => {
       return;
     }
 
-    console.log("File is valid", file);
-  }
-};
-
-// Handle submit for IPFS upload
-const handleSubmit = async (file) => {
-  try {
-    const fileData = new FormData();
-    fileData.append("file", file); // Use the file passed from handleFileChange
-
-    const responseData = await axios({
-      method: "post",
-      url: "https://api.pinata.cloud/pinning/pinFileToIPFS",
-      data: fileData,
-      headers: {
-        Authorization: `Bearer ${import.meta.env.VITE_PINATA_JWT}`,  
-      }
-    });
-
-    const fileUrl = "https://gateway.pinata.cloud/ipfs/" + responseData.data.IpfsHash;
-    setFileUrl(fileUrl);
-    toast.success("File successfully uploaded to IPFS!");
-    console.log(fileUrl)
-  } catch (err) {
-    console.error(err);
-    toast.error("Error uploading file to IPFS.");
-  }
-};
+      console.log("File is valid", file);
+    }
+  
+  };
 
 
 
   return (
-    <div className="bg-[#0D111D] h-screen px-12">
-    <div className="flex justify-between pt-12 pl-14 pr-14 items-center mb-4">
-      <h1 className="text-white font-bold text-3xl">My Files</h1>
-      <ToastContainer />
-      <button
-        onClick={handlePopup}
-        className="mt-8 bg-[#27E8A7] w-auto text-black font-bold py-2 px-6 rounded-md hover:bg-[#20C08F] transition-colors"
-      >
-        New File
-      </button>
-    </div>
+    <div className="bg-[#0D111D] h-full min-h-screen px-12">
+      <div className="flex justify-between pt-12 px-4 mb-3 items-center">
+        <h1 className="text-white font-bold text-3xl">My Files</h1>
+        <ToastContainer />
+        <button
+          onClick={handlePopup}
+          className="bg-[#27E8A7] w-auto text-black font-bold py-2 px-6 rounded-md hover:bg-[#20C08F] transition-colors"
+        >
+          New File
+        </button>
+      </div>
 
-    {popup && (
-      <Dialog open={popup} onOpenChange={setPopup}>
-        <DialogTitle></DialogTitle>
-        <DialogContent className="bg-gray-900 border-none text-white py-7 px-8 max-w-[52vh] overflow-auto">
-          <div className="flex mb-8 gap-2 h-80">
-            <Tabs defaultValue={popupTab}>
-              <TabsList className="grid h-min grid-cols-2 mb-[5vh] bg-gray-600 text-white">
-                <TabsTrigger value="requestNewFile" className=" text-sm flex items-center justify-center">
-                  Request New File
-                </TabsTrigger>
-                <TabsTrigger value="requestVerification" className=" text-sm flex items-center justify-center">
-                  Request Verification
-                </TabsTrigger>
-              </TabsList>
+      {popup && (
+        <Dialog open={popup} onOpenChange={setPopup}>
+          <DialogTitle></DialogTitle>
+          <DialogContent className="bg-gray-900 border-none text-white py-7 px-8 max-w-[52vh] overflow-auto">
+            <div className="flex mb-8 gap-2 h-80">
+              <Tabs defaultValue={popupTab}>
+                <TabsList className="grid h-min grid-cols-2 mb-[5vh] bg-gray-600 text-white">
+                  <TabsTrigger value="requestNewFile" className=" text-sm flex items-center justify-center">
+                    Request New File
+                  </TabsTrigger>
+                  <TabsTrigger value="requestVerification" className=" text-sm flex items-center justify-center">
+                    Request Verification
+                  </TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="requestNewFile">
-                <form>
-                  <div className="mb-8 w-[40vh]">
-                    <label className="block text-gray-300 font-semibold">Document Type</label>
-                    <select className="w-full border border-gray-300 p-2 mt-2 px-2 rounded-md">
-                      <option value="">Select Document</option>
-                      <option value="document1">Bonafide Certificate</option>
-                      <option value="document2">Merit Award Certificate</option>
-                    </select>
-                  </div>
+                <TabsContent value="requestNewFile">
+                  <form>
+                    <div className="mb-8 w-[40vh]">
+                      <label className="block text-gray-300 font-semibold">Document Type</label>
+                      <select className="w-full border border-gray-300 p-2 mt-2 px-2 rounded-md">
+                        <option value="">Select Document</option>
+                        <option value="document1">Bonafide Certificate</option>
+                        <option value="document2">Merit Award Certificate</option>
+                      </select>
+                    </div>
 
-                  <div className="mb-8">
-                    <label className="block text-gray-300 font-semibold">Organization</label>
-                    <select className="w-full border border-gray-300 p-2 mt-2 rounded-md">
-                      <option value="">Select Organization</option>
-                      <option value="org1">Netaji Subhas University of Technology</option>
-                    </select>
-                  </div>
+                    <div className="mb-8">
+                      <label className="block text-gray-300 font-semibold">Organization</label>
+                      <select className="w-full border border-gray-300 p-2 mt-2 rounded-md">
+                        <option value="">Select Organization</option>
+                        <option value="org1">Netaji Subhas University of Technology</option>
+                      </select>
+                    </div>
 
-                  <div className="flex justify-end">
-                    <button type="submit" className="bg-primaryGreen text-black font-medium px-4 py-2 rounded">
-                      Request
-                    </button>
-                  </div>
-                </form>
-              </TabsContent>
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-primaryGreen text-black font-medium px-4 py-2 rounded">
+                        Request
+                      </button>
+                    </div>
+                  </form>
+                </TabsContent>
 
               <TabsContent value="requestVerification">
                 <form>
@@ -206,42 +201,42 @@ const handleSubmit = async (file) => {
                  
                   </div>
 
-                  <div className="flex justify-end">
-                    <button type="submit" className="bg-primaryGreen text-black font-medium px-4 py-2 rounded">
-                      Submit
-                    </button>
-                  </div>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </DialogContent>
-      </Dialog>
-    )}
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-primaryGreen text-black font-medium px-4 py-2 rounded">
+                        Submit
+                      </button>
+                    </div>
+                  </form>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
-    <div className="grid grid-cols-4 gap-4 px-14">
-      {files.map((file) => (
-        <FileCard key={file.id} file={file} />
-      ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 px-4">
+        {files.map((file) => (
+          <FileCard key={file.id} file={file} />
+        ))}
+      </div>
     </div>
-  </div>
 );
 }
 
 
 function FileCard({ file, deleteFile }) {
-  const [showOptions, setShowOptions] = useState(false);
-  const [deletePopup, setDeletePopup] = useState(false);
+  // const [showOptions, setShowOptions] = useState(false);
+  // const [deletePopup, setDeletePopup] = useState(false);
 
-  const toggleOptions = () => {
-    setShowOptions(!showOptions);
-  };
+  // const toggleOptions = () => {
+  //   setShowOptions(!showOptions);
+  // };
 
-  const handleDelete = () => {
-    deleteFile(file.id);
-    setDeletePopup(false); 
-    setShowOptions(false); 
-  };
+  // const handleDelete = () => {
+  //   deleteFile(file.id);
+  //   setDeletePopup(false); 
+  //   setShowOptions(false); 
+  // };
 
   return (
     <div className="relative bg-[#1C1F2E] p-4 rounded-lg text-white">
@@ -249,12 +244,12 @@ function FileCard({ file, deleteFile }) {
     <img src={file.url} className="rounded mb-2" />
 
     <div className="flex justify-between items-start ">
-    <h3 className="font-semibold  truncate">{file.name}</h3>
-      <MoreVertical className="w-5 h-5 cursor-pointer" onClick={toggleOptions} />
+    <h3 className="text-md truncate">{file.name}</h3>
+      {/* <MoreVertical className="w-5 h-5 cursor-pointer" onClick={toggleOptions} /> */}
     </div>
       
 
-      {showOptions && (
+      {/* {showOptions && (
         <div className="absolute right-4 top-18 z-30 bg-gray-800 text-white rounded-md shadow-lg">
           <button
             className="block px-4 py-2 text-left w-full hover:bg-red-600 hover:rounded-md"
@@ -263,9 +258,9 @@ function FileCard({ file, deleteFile }) {
             Delete
           </button>
         </div>
-      )}
+      )} */}
 
-      {deletePopup && (
+      {/* {deletePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
           <div className="bg-gray-800 py-8 px-10 w-96 rounded-lg shadow-lg">
             <h2 className="text-white font-semibold text-lg mb-4">Confirm Delete</h2>
@@ -289,7 +284,7 @@ function FileCard({ file, deleteFile }) {
             </div>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
