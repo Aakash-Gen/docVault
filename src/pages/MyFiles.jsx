@@ -15,6 +15,7 @@ function MyFiles() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [predictionResult, setPredictionResult] = useState(null);
   const [success, setSuccess] = useState("")
+  const[fileUrl, setFileUrl] =useState("");
 
 
   const [ files, setFiles ] = useState([
@@ -31,75 +32,106 @@ function MyFiles() {
   const handleTabChange =(tabName)=>{
     setActiveTab(tabName);
 }
+
+// Handle file change and validation logic
 const handleFileChange = async (event) => {
   const file = event.target.files[0];
-  console.log("Selected file:", file); // Add this line to log the selected file
+  console.log("Selected file:", file);
 
-  setSelectedFile(file);
+  setSelectedFile(file); // Store the selected file
 
   if (file) {
-      const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/pdf"];
-      if (!validTypes.includes(file.type)) {
-          toast.error("Invalid file type. Only PNG, JPG, JPEG are allowed.");
-          return;
-      }
-
-      const maxSizeInBytes = 50 * 1024;
-      if (file.size > maxSizeInBytes) {
-          toast.error("File size less than 50KB.");
-          return;
-      }
-
-      const formData = new FormData();
-      formData.append('image', file);
-
-      try {
-          console.log("Uploading file..."); // Add this line to log the upload attempt
-          const response = await axios.post('http://localhost:5002/upload', formData);
-          const predictionResponse = await axios.post('http://127.0.0.1:5000/predict', formData);
-
-
-          // Check if 'error' is in the response
-          if (response.data.error) {
-              toast.error(`Backend Error: ${response.data.error}`);
-          } 
-          
-          else if (response.data.result) {
-              // Safely check and use result
-              const result = response.data.result;
-              if (typeof result === 'string' && result.includes('blurry')) {
-                  toast.error('The image is blurry.');
-              } else if(typeof result === 'string' && result.includes('rejected')){
-                  toast.error('The image did not passes OCR test');
-              }
-              
-      else if (predictionResponse.data.prediction) {
-          const prediction = predictionResponse.data.prediction;
-          if (prediction === 1) {
-            setPredictionResult("Document passed edge detection test.");
-            setSuccess("true")
-            toast.success("Document passed all tests.");
-          } else {
-            setPredictionResult("Document did not pass edge detection test.");
-            toast.error("Document did not pass edge detection test.");
-          }
-        }
-       } else {
-          toast.error('Unexpected response from the prediction server.');
-        }
-
-      }
-    
-      catch (error) {
-          toast.error('Error uploading the image.');
-          setSuccess("false")
-          console.error('Error:', error.response ? error.response.data : error.message); // Log detailed error
-      }
-
-      console.log("File is valid", file);
+    const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/pdf"];
+    if (!validTypes.includes(file.type)) {
+      toast.error("Invalid file type. Only PNG, JPG, JPEG are allowed.");
+      return;
     }
-  
-  };
+
+    const maxSizeInBytes = 50 * 1024; // 50KB
+    if (file.size > maxSizeInBytes) {
+      toast.error("File size must be less than 50KB.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      console.log("Uploading file for validation...");
+
+      // Upload the file for blurriness and OCR test
+      const response = await axios.post('http://localhost:5002/upload', formData);
+
+      // Call the prediction endpoint for edge detection
+      const predictionResponse = await axios.post('http://127.0.0.1:5000/predict', formData);
+
+      // Handle response from backend validation
+      if (response.data.error) {
+        toast.error(`Backend Error: ${response.data.error}`);
+        setSuccess(false);
+        return;
+      }
+
+      const result = response.data.result;
+      if (typeof result === 'string' && result.includes('blurry')) {
+        toast.error('The image is blurry.');
+        setSuccess(false);
+        return;
+      } else if (typeof result === 'string' && result.includes('rejected')) {
+        toast.error('The image did not pass OCR test.');
+        setSuccess(false);
+        return;
+      }
+
+      // Handle edge detection prediction
+      if (predictionResponse.data.prediction === 1) {
+        setPredictionResult("Document passed edge detection test.");
+        setSuccess(true);
+        toast.success("Document passed all tests.");
+
+        // Now call handleSubmit since all tests passed
+        handleSubmit(file); // Pass the file to handleSubmit for IPFS upload
+      } else {
+        setPredictionResult("Document did not pass edge detection test.");
+        toast.error("Document did not pass edge detection test.");
+        setSuccess(false);
+        return;
+      }
+    } catch (error) {
+      toast.error('Error uploading the image.');
+      setSuccess(false);
+      console.error('Error:', error.response ? error.response.data : error.message);
+      return;
+    }
+
+    console.log("File is valid", file);
+  }
+};
+
+// Handle submit for IPFS upload
+const handleSubmit = async (file) => {
+  try {
+    const fileData = new FormData();
+    fileData.append("file", file); // Use the file passed from handleFileChange
+
+    const responseData = await axios({
+      method: "post",
+      url: "https://api.pinata.cloud/pinning/pinFileToIPFS",
+      data: fileData,
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_PINATA_JWT}`,  
+      }
+    });
+
+    const fileUrl = "https://gateway.pinata.cloud/ipfs/" + responseData.data.IpfsHash;
+    setFileUrl(fileUrl);
+    toast.success("File successfully uploaded to IPFS!");
+    console.log(fileUrl)
+  } catch (err) {
+    console.error(err);
+    toast.error("Error uploading file to IPFS.");
+  }
+};
 
 
 
@@ -161,14 +193,17 @@ const handleFileChange = async (event) => {
               <TabsContent value="requestVerification">
                 <form>
                   <div className="mb-4  w-[40vh]">
-                    <div className="flex justify-between justify-content items-center">
-                    <label className="block text-gray-300 font-semibold">Upload File</label>
+                  
+                  
                     {
-                      success=="true"?
-                      <div className="text-green-600">File Uploaded</div>: success==="false"?
-                       <div className=" text-red-600"> File Not Uploaded</div>: <div></div>
-                                          }</div>
-                    <FileUpload type="file" onChange={handleFileChange} />
+                      fileUrl?<img src={fileUrl} />:  
+                      <div className="flex justify-between justify-content items-center">
+                      <label className="block text-gray-300 font-semibold">Upload File</label>
+                      <FileUpload type="file" onChange={handleFileChange} />
+                      </div>
+                      }
+                      
+                 
                   </div>
 
                   <div className="flex justify-end">
